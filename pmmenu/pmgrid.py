@@ -29,7 +29,7 @@ class PMGrid(pygame.sprite.OrderedUpdates):
 		for menu_item in menu_item_cfgs:
 			#print menu_item
 			if menu_item['visible'] or toggle_item_visibility:
-				pm_menu_item = PMMenuItem(menu_item, self.cfg)
+				pm_menu_item = PMMenuItem(menu_item, self.cfg, toggle_item_visibility)
 				if (
 				
 					(self.cfg.options.hide_emulators and pm_menu_item.num_roms == 0 and pm_menu_item.rom_path) or
@@ -254,46 +254,36 @@ class PMGrid(pygame.sprite.OrderedUpdates):
 			if self.selected_index == 0: 
 				sprite = self.get_selected_item()
 				if sprite.type == PMMenuItem.NAVIGATION:
-					self.do_menu_item_action(sprite)
+					self.navigate(sprite)
 			else:
 				self.set_selected_index(self.selected_index - 1)
 		elif action == 'RIGHT':
 			if self.selected_index == self.num_items_per_page - 1:    #zero based
 				sprite = self.get_selected_item()
 				if sprite.type == PMMenuItem.NAVIGATION:
-					self.do_menu_item_action(sprite)
+					self.navigate(sprite)
 			else:
 				self.set_selected_index(self.selected_index + 1)
 		elif action == 'UP':
 			if self.selected_index == 0:
 				sprite = self.get_selected_item()
 				if sprite.type == PMMenuItem.NAVIGATION:
-					self.do_menu_item_action(sprite)
+					self.navigate(sprite)
 			else:
 				self.set_selected_index(self.selected_index - self.cfg.options.num_items_per_row)
 		elif action == 'DOWN':
 			if self.selected_index == self.num_items_per_page - 1:    #zero based
 				sprite = self.get_selected_item()
 				if sprite.type == PMMenuItem.NAVIGATION:
-					self.do_menu_item_action(sprite)
+					self.navigate(sprite)
 			else: 
 				self.set_selected_index(self.selected_index + self.cfg.options.num_items_per_row)
 
 			
 		return self.update_display
 			
-	def do_menu_item_action(self, sprite):
-		if sprite.type == PMMenuItem.EMULATOR:
-				self.cfg.options.fade_image.blit(self.screen,(0,0))
-				self.cfg.options.menu_select_sound.play()
-				self.manager.go_to(RomListScene(sprite.get_rom_list(), sprite.label))
-		elif sprite.command == 'exit_piplay':
-				pygame.quit()
-				sys.exit()
-		elif sprite.type == PMMenuItem.COMMAND:
-				self.cfg.options.menu_select_sound.play()
-				PMUtil.run_command_and_continue(sprite.command)
-		elif sprite.type == PMMenuItem.NAVIGATION:
+	def navigate(self, sprite):
+		if sprite.type == PMMenuItem.NAVIGATION:
 				self.cfg.options.menu_navigation_sound.play()
 				self.cfg.options.fade_image.blit(self.screen,(0,0))
 				if sprite.command == PMMenuItem.PREV_PAGE:
@@ -306,9 +296,6 @@ class PMGrid(pygame.sprite.OrderedUpdates):
 					self.draw_items()
 					self.set_selected_index(0, play_sound = False)
 					effect = PMUtil.fade_into(self, self.cfg.options.fade_image, self.cfg.options.use_scene_transitions)
-		else:
-				self.cfg.options.menu_select_sound.play()
-				PMUtil.run_command_and_continue(sprite.command)
 		
 	class Selection(pygame.sprite.Sprite):
 		def __init__(self, cfg):

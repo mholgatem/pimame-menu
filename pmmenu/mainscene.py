@@ -9,6 +9,10 @@ from pmheader import *
 from pmlabel import *
 from pmutil import *
 from romlistscene import *
+from styles import *
+from styles.slide import *
+from styles.vertical import *
+from styles.grid import *
 
 import os, time
 
@@ -24,61 +28,17 @@ class MainScene(object):
 		super(MainScene, self).__init__()
 
 	def draw_bg(self):
-		#self.screen.fill(self.cfg.options.background_color)
 		self.screen.blit(self.cfg.options.pre_loaded_background, (0,0))
 		
 	def draw_header(self):
-		# @TODO - how to prepare ahead of time:
-		header = pygame.sprite.RenderPlain((self.header))
-		header.draw(self.screen)
-
-	def draw_ip_addr(self):
-		displayString = ''
-
-		if self.cfg.options.show_ip:
-			try:
-				displayString = PMUtil.get_ip_addr()
-			except:
-				displayString = "No Network Connection"
-
-			self.ip_addr = PMLabel(displayString, self.cfg.options.font, self.cfg.options.default_font_color, self.cfg.options.default_font_background_color)
-			label = pygame.sprite.RenderPlain((self.ip_addr))
-			textpos = self.ip_addr.rect
-			textpos.x = pygame.display.Info().current_w - textpos.width - self.cfg.options.padding
-			textpos.y = self.cfg.options.padding
-			label.draw(self.screen)
-
-	def draw_update(self):
-		displayString = ''
-
-		if self.cfg.options.show_update:
-			user_agent = {"User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:25.0) Gecko/20100101 Firefox/25.0"}
-			try:
-				import requests
-				version_web = float( requests.get('http://www.pimame.org/version', headers = user_agent).text)
-				version_current = float(open("../version", 'r').read())
-				if version_current < version_web:
-					displayString = "New Version Available"
-			except:
-				displayString = "Could not check for updates"
-
-			self.update_label = PMLabel(displayString, self.cfg.options.font, self.cfg.options.default_font_color, self.cfg.options.default_font_background_color)
-			label = pygame.sprite.RenderPlain((self.update_label))
-			textpos = self.update_label.rect
-			textpos.x = self.cfg.options.padding
-			textpos.y = self.cfg.options.padding
-			label.draw(self.screen)
+		self.header.draw(self.screen)
 
 	def pre_render(self, screen, call_render):
 		if not self.pre_rendered:
-			if  self.cfg.options.theme_style == "flow":
-				from pmflow import *
-				self.menu_style = PMFlow(self.cfg.options.options_menu_items, self.cfg)
-			elif self.cfg.options.theme_style == 'slide':
-				from pmslide import *
-				self.menu_style = PMSlide(self.cfg.options.options_menu_items, self.cfg)
-			else:
-				from pmgrid import *
+			try:
+				if self.cfg.options.theme_style in ['slide', 'vertical', 'grid']:
+					self.menu_style = eval('PM' + self.cfg.options.theme_style.capitalize() + '(self.cfg.options.options_menu_items, self.cfg)')
+			except NameError:
 				self.menu_style = PMGrid(self.cfg.options.options_menu_items, self.cfg)
 			
 			
@@ -87,7 +47,7 @@ class MainScene(object):
 			self.pre_rendered = True
 		
 		if call_render: 
-			if self.cfg.options.theme_style == 'slide': self.menu_style.selected_index = None #do this to fix premature update when backing out of romlist
+			if self.cfg.options.theme_style in ['slide', 'vertical']: self.menu_style.selected_index = None #do this to fix premature update when backing out of romlist
 			self.render(self.screen)
 	
 	def set_item_visibility(self):
@@ -95,12 +55,13 @@ class MainScene(object):
 		self.temp_cfg = {'item_height':self.cfg.options.item_height, 
 								'num_items_per_row': self.cfg.options.num_items_per_row,
 								'header_height': self.cfg.options.header_height}
-								
-		self.cfg.options.item_height = 100
-		self.cfg.options.num_items_per_row = 10
-		self.cfg.options.header_height = 0
 		
-		from pmgrid import *
+		if not isinstance(self.menu_style, PMGrid):
+			print 'changing config options'
+			self.cfg.options.item_height = 250
+			self.cfg.options.num_items_per_row = 5
+			self.cfg.options.header_height = 0
+		
 		self.menu_style = PMGrid(self.cfg.options.options_menu_items, self.cfg, toggle_item_visibility = True)
 		
 		if self.warning:
@@ -140,22 +101,17 @@ class MainScene(object):
 	
 	def render(self, screen):
 		self.last_update = 0
-		self.header = PMHeader(self.cfg.options)
+		self.header = pygame.sprite.RenderPlain((PMHeader(self.cfg.options)))
 		self.draw_bg()
 		self.draw_header()
-		self.draw_ip_addr()
-		self.draw_update()
 		self.menu_style.draw_items()
 		self.menu_style.set_selected_index(self.menu_style.selected_index, play_sound = False)
-		#self.draw_selection()
-		
 
 		if self.cfg.options.fade_image:
 			effect = PMUtil.fade_into(self, self.cfg.options.fade_image, self.cfg.options.use_scene_transitions)
 		else:
 			effect = PMUtil.fade_in(self, self.cfg.options.use_scene_transitions)
 		self.cfg.options.fade_image.blit(self.screen,(0,0))
-		
 		
 		if self.cfg.options.first_run:
 			self.cfg.options.first_run = 0
@@ -174,7 +130,7 @@ class MainScene(object):
 
 
 	def update(self):
-		if pygame.time.get_ticks() - self.last_update > 10000:
+		if pygame.time.get_ticks() - self.last_update > (10 * 1000):
 			update_screen = self.cfg.config_cursor.execute('SELECT roms_added FROM options').fetchone()[0]
 			
 			if update_screen:
@@ -188,13 +144,14 @@ class MainScene(object):
 				self.cfg.config_cursor.execute('UPDATE options SET roms_added = 0')
 				self.cfg.config_db.commit()
 				
-		self.last_update = pygame.time.get_ticks()
+			self.last_update = pygame.time.get_ticks()
 
 		
 	def warning_check(self):
 		if self.warning.answer:
 				if self.warning.title == 'ROMS':
 					if self.warning.answer == "YES": 
+						self.cfg.close_database_connections()
 						PMUtil.run_command_and_continue('python /home/pi/pimame/pimame-menu/scraper/scrape_script.py --platform ' + str(self.menu_style.get_selected_item().id) + "%%" + str(self.menu_style.get_selected_item().id))
 					else:
 						self.warning = PMWarning(self.screen, self.cfg.options, "Would you like to add these items to your romlist without scraping?", "yes/no", "ROMS_CONFIRM")
@@ -252,7 +209,7 @@ class MainScene(object):
 				status = None
 				self.popup = None
 				self.toggle_item_visibility = True
-				self.warning = PMWarning(self.screen, self.cfg.options, "Loading icons...\nThis may take a minute.", "ok", "HIDE_ICONS")
+				self.warning = PMWarning(self.screen, self.cfg.options, "Loading icons...\nThis may take a minute.\nPress Back to save your settings.", "ok", "HIDE_ICONS")
 				self.set_item_visibility()
 		else:
 			
@@ -315,7 +272,7 @@ class MainScene(object):
 				
 					if len(clicked_sprites) > 0:
 						sprite = clicked_sprites[0]
-						self.set_selected_index(sprite)
+						self.menu_style.set_selected_index(sprite)
 					
 		self.update()
 		return self.update_display
@@ -338,6 +295,7 @@ class MainScene(object):
 					sys.exit()
 			elif sprite.type == PMMenuItem.COMMAND:
 					self.cfg.options.menu_select_sound.play()
+					self.cfg.close_database_connections()
 					PMUtil.run_command_and_continue(sprite.command)
 			elif sprite.type == PMMenuItem.NAVIGATION:
 					self.cfg.options.menu_navigation_sound.play()
@@ -354,4 +312,5 @@ class MainScene(object):
 						effect = PMUtil.fade_into(self, self.cfg.options.fade_image, self.cfg.options.use_scene_transitions)
 			else:
 					self.cfg.options.menu_select_sound.play()
+					self.cfg.close_database_connections()
 					PMUtil.run_command_and_continue(sprite.command)

@@ -100,7 +100,6 @@ class PMControllerConfig(pygame.sprite.Sprite):
 	
 	def update_menu(self):
 			
-		#not efficient way, should clear and redraw updated secion
 		self.menu = pygame.Surface([self.list.item_width, self.list.item_height], pygame.SRCALPHA, 32).convert_alpha()
 		self.rect = self.menu.get_rect()
 		self.menu.fill(self.cfg.popup_menu_background_color, self.rect)
@@ -290,7 +289,7 @@ class PMControllerConfig(pygame.sprite.Sprite):
 						
 						elif event.type in events_to_capture:
 							if event.type == KEYUP:
-								mapping[self.buttons_to_update[self.current_button]] = {"type":event.type, "key":event.key, "mod": event.mod, "keyname": pygame.key.name(event.key)}
+								mapping[self.buttons_to_update[self.current_button]] = {"type":event.type, "key":event.key, "mod": event.mod, "keyname": pygame.key.name(event.key), 'scancode': event.scancode}
 							
 							elif event.type == JOYBUTTONUP:
 								mapping[self.buttons_to_update[self.current_button]] = {"type":event.type, "button":event.button, "joy": event.joy, "joystickID": self.joystickID[event.joy]}

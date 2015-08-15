@@ -1,5 +1,6 @@
 import thread, time
 import unicodedata
+import sys
 import pygame
 from pmcontrols import *
 from pmpopup import *
@@ -18,6 +19,7 @@ class RomListScene(object):
 	sprites = []
 	
 	boxart_thread = None
+	boxart_on_screen = False
 
 	def __init__(self, rom_list, menu_id):
 		super(RomListScene, self).__init__()
@@ -73,16 +75,17 @@ class RomListScene(object):
 			self.description_area.left = self.info_container.left
 			
 			
-		
-		self.info_surface = pygame.Surface([self.avail_width, self.avail_height], pygame.SRCALPHA, 32).convert_alpha()
-		self.info_surface.blit(PMUtil.glass(self.cfg.options.pre_loaded_rom_list_background, self.cfg.options.info_bg1, self.info_box), self.info_box)
-		self.info_surface.blit(PMUtil.glass(self.cfg.options.pre_loaded_rom_list_background, self.cfg.options.info_bg2, self.description_area), self.description_area)
-		self.info_surface.blit(PMUtil.glass(self.cfg.options.pre_loaded_rom_list_background, self.cfg.options.boxart_background_color, self.boxart_area), self.boxart_area)
-		
-		if self.cfg.options.info_border_thickness > 0:
-			IBT = self.cfg.options.info_border_thickness
-			pygame.draw.rect(self.info_surface, self.cfg.options.info_border_color, self.description_area.inflate(-IBT+2,-IBT+2), IBT)
-			pygame.draw.rect(self.info_surface, self.cfg.options.info_border_color, self.info_box.inflate(-IBT+2,-IBT+2), IBT)
+		if self.info_box.w > 0 and self.info_box.h > 0:
+			self.info_surface = pygame.Surface([self.avail_width, self.avail_height], pygame.SRCALPHA, 32).convert_alpha()
+			self.info_surface.blit(PMUtil.glass(self.cfg.options.pre_loaded_rom_list_background, self.cfg.options.info_bg1, self.info_box), self.info_box)
+			self.info_surface.blit(PMUtil.glass(self.cfg.options.pre_loaded_rom_list_background, self.cfg.options.info_bg2, self.description_area), self.description_area)
+			self.info_surface.blit(PMUtil.glass(self.cfg.options.pre_loaded_rom_list_background, self.cfg.options.boxart_background_color, self.boxart_area), self.boxart_area)
+			if self.cfg.options.info_border_thickness > 0:
+				IBT = self.cfg.options.info_border_thickness
+				pygame.draw.rect(self.info_surface, self.cfg.options.info_border_color, self.description_area.inflate(-IBT+2,-IBT+2), IBT)
+				pygame.draw.rect(self.info_surface, self.cfg.options.info_border_color, self.info_box.inflate(-IBT+2,-IBT+2), IBT)
+		else:
+			self.info_surface = None
 
 		#self.info_surface.fill(self.cfg.options.info_bg2, self.description_area)
 		#self.info_surface.fill(self.cfg.options.info_bg1, self.info_box)
@@ -395,11 +398,9 @@ class RomListScene(object):
 
 	
 	def draw(self, draw_boxart = True):
-		if draw_boxart:
-			try:
-				if self.boxart_on_screen: 
-					self.draw_bg(self.info_container)
-			except: pass
+		if draw_boxart and self.info_surface:
+			if self.boxart_on_screen: 
+				self.draw_bg(self.info_container)
 			if self.info_container.w: self.boxart_thread = thread.start_new_thread(self.draw_boxart, (5,))
 		
 		self.selected_item.toggle_selection()
@@ -418,6 +419,7 @@ class RomListScene(object):
 
 
 	def run_sprite_command(self, sprite):
+		self.boxart_thread = None
 		if(sprite.type == 'back'):
 			self.cfg.options.menu_back_sound.play()
 			self.manager.back()
@@ -429,4 +431,13 @@ class RomListScene(object):
 				time.sleep(.01)
 			self.cfg.local_cursor.execute("UPDATE local_roms SET number_of_runs = ifnull(number_of_runs,0) + 1 WHERE id = ?", (sprite.id,))
 			self.cfg.local_db.commit()
-			PMUtil.run_command_and_continue(sprite.command + "%%" + str(self.menu_id))
+			if '--quicklaunch' in sys.argv:
+				sys.argv[sys.argv.index('--quicklaunch') + 1] = str(self.menu_id)
+			else:
+				sys.argv.append("--quicklaunch")
+				sys.argv.append(str(self.menu_id))
+			if '--auto_exec' in sys.argv:
+				if sys.argv[sys.argv.index('--auto_exec') + 1].lower() == 'select':
+					sys.argv[sys.argv.index('--auto_exec') + 1] = sprite.command
+			self.cfg.close_database_connections()
+			PMUtil.run_command_and_continue(sprite.command)

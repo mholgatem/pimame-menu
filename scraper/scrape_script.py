@@ -14,6 +14,7 @@ import sys
 import unicodedata
 import zlib
 import zipfile
+import shutil
 
 from Levenshtein import setratio
 
@@ -84,12 +85,12 @@ class API(object):
 		atexit.register(self.enable_cursor)
 		self.OPT_SHOW_CLONES = True
 		self.OPT_OVERWRITE_IMAGES = False
-		self.DATABASE_PATH = '/home/pi/pimame/pimame-menu/database/'
-		self.GAMES = sqlite3.connect(self.DATABASE_PATH + 'games_master.db', check_same_thread=False)
+		self.DATABASE_PATH = os.path.realpath('/home/pi/pimame/pimame-menu/database/')
+		self.GAMES = sqlite3.connect(os.path.join(self.DATABASE_PATH, 'games_master.db'), check_same_thread=False)
 		self.GC = self.GAMES.cursor()
-		self.CONFIG = sqlite3.connect(self.DATABASE_PATH + 'config.db', check_same_thread=False)
+		self.CONFIG = sqlite3.connect(os.path.join(self.DATABASE_PATH, 'config.db'), check_same_thread=False)
 		self.CC = self.CONFIG.cursor()
-		self.LOCAL = sqlite3.connect(self.DATABASE_PATH + 'local.db', check_same_thread=False)
+		self.LOCAL = sqlite3.connect(os.path.join(self.DATABASE_PATH, 'local.db'), check_same_thread=False)
 		self.LC = self.LOCAL.cursor()
         
 		
@@ -516,8 +517,8 @@ class API(object):
 			#in verbose mode: ask if game matches
 			if (VERBOSE == "SEMI" or VERBOSE == "FULL") and hi_score < .94 and best_match_game:
 				best_match_game = best_match_game if self.raw_input_with_timeout('Does %s match %s - %s' % (pcolor('cyan', "["+ rom +"]"), 
-																																						pcolor('cyan', "["+ best_match_game[2] +"]"),
-																																						pcolor('yellow', "["+"{0:.0f}%".format(float(hi_score) * 100)+"]")), timeout = 10.0) else None
+																										pcolor('cyan', "["+ best_match_game[2] +"]"),
+																										pcolor('yellow', "["+"{0:.0f}%".format(float(hi_score) * 100)+"]")), timeout = 10.0) else None
 			if VERBOSE == 'FULL':
 				try:
 					if best_match_game:
@@ -550,6 +551,10 @@ class API(object):
 		print 'Fetching %s rom list...' % pcolor('cyan', platform['label'])
 		roms = self.get_stored_roms(platform['rom_path'])
 		
+		if not roms:
+			#delete all entries for system
+			query = 'DELETE FROM local_roms WHERE system = {platform_id}'.format(platform_id = platform['id'])
+			self.LC.execute(query)
 		if roms:
 			#Create Temp table with only currently 
 			print 'Connecting to PiPlay Database...'
@@ -708,7 +713,10 @@ class API(object):
 		everything = self.get_stored_roms(platform['rom_path'], is_scummvm = True)
 		roms = everything['directories']
 		all_files = everything['all_files']
-		
+		if not roms:
+			#delete all entries for system
+			query = 'DELETE FROM local_roms WHERE system = {platform_id}'.format(platform_id = platform['id'])
+			self.LC.execute(query)
 		if roms:
 			#Create Temp table with only currently 
 			print 'Connecting to PiPlay Database...'
@@ -822,6 +830,11 @@ except KeyboardInterrupt:
 	print 'Now Exiting... Some of your changes may not have been saved'
 finally:
 	os.system('setterm -cursor on')
+	api.LOCAL.close()
+	api.GAME.close()
+	api.CONFIG.close()
+	shutil.copy(os.path.join(api.DATABASE_PATH, 'local.db'), os.path.join(api.DATABASE_PATH, 'local.db.bak'))
+	
 
 
 

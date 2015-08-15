@@ -2,6 +2,7 @@ import pygame
 import subprocess
 import re
 import sys
+import argparse
 import time
 from os import system, remove, close, execl
 from tempfile import mkstemp
@@ -32,24 +33,14 @@ class PMUtil:
 	def run_command_and_continue(command):
 		pygame.quit()
 		time.sleep(1)
-		command = command.split("%%")
-		if command[0] == "QUIT":
-			pygame.quit()
+		if command == "QUIT":
 			sys.exit()
-			
-		system(command[0] + " && export LD_LIBRARY_PATH= ")
 		
-		#restart piplay
+		print command
+		system(command + " && export LD_LIBRARY_PATH= ")
+		print 'getting ready to restart'
 		python = sys.executable
-		sys.argv = [sys.argv[0]]
-		if len(command) > 1:
-			sys.argv.append("--quicklaunch")
-			sys.argv.append(command[1])
-			
-			
 		execl(python, python, * sys.argv)
-		
-		#not used?
 		sys.exit()
 	
 	@staticmethod

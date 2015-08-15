@@ -30,10 +30,10 @@ class PMMenuItem(pygame.sprite.Sprite):
 		self.command = self.menu_item['command']
 		self.full_path = self.menu_item['include_full_path']
 		self.scraper_id = self.menu_item['scraper_id'] if self.menu_item['scraper_id'] else ''
+		self.platform_info = self.get_platform_info()
 		self.banner = self.cfg.options.load_image(self.menu_item['banner'], verbose = True) #verbose=True, will return None, rather than blank image
 		self.warning = ''
 		self.visible = bool(self.menu_item['visible'])
-		
 		
 		
 		self.icon_selected = self.menu_item['icon_selected']
@@ -97,14 +97,15 @@ class PMMenuItem(pygame.sprite.Sprite):
 			
 
 		if self.display_label:
-			label = PMLabel(self.label, self.cfg.options.label_font, self.cfg.options.label_font_color, self.cfg.options.label_background_color, self.cfg.options.label_font_bold, self.cfg.options.label_max_text_width)
+			label = PMLabel(self.label, self.cfg.options.label_font, self.cfg.options.label_font_color, self.cfg.options.label_background_color, self.cfg.options.label_font_bold, self.cfg.options.label_max_text_width, outline_color = self.cfg.options.label_font_outline_color)
 			textpos = label.rect
-			if self.cfg.options.label_text_align == 'right': textpos.x = text_align - label.rect.w + self.cfg.options.labels_offset[0]
-			elif  self.cfg.options.label_text_align == 'center': textpos.x = ((text_align - label.rect.w)/2) + self.cfg.options.labels_offset[0]
-			else: textpos.x = self.cfg.options.labels_offset[0]
+			if self.cfg.options.label_text_align == 'right':
+				textpos.x = text_align - label.rect.w + self.cfg.options.labels_offset[0]
+			elif  self.cfg.options.label_text_align == 'center': 
+				textpos.x = ((text_align - label.rect.w)/2) + self.cfg.options.labels_offset[0]
+			else: 
+				textpos.x = self.cfg.options.labels_offset[0]
 			textpos.y = self.cfg.options.labels_offset[1]
-			
-			
 			icon.blit(label.image, textpos)
 
 		if self.cfg.options.display_rom_count:
@@ -112,13 +113,14 @@ class PMMenuItem(pygame.sprite.Sprite):
 				self.update_num_roms()
 				if self.num_roms != 0:
 					label = PMLabel(str(self.num_roms) + self.warning, self.cfg.options.rom_count_font, self.cfg.options.rom_count_font_color, self.cfg.options.rom_count_background_color, self.cfg.options.rom_count_font_bold, self.cfg.options.rom_count_max_text_width)
-					textpos = label.rect
-					
-					if self.cfg.options.rom_count_text_align == 'right': textpos.x = text_align - label.rect.w + self.cfg.options.rom_count_offset[0]
-					elif  self.cfg.options.rom_count_text_align == 'center': textpos.x = ((text_align - label.rect.w)/2) + self.cfg.options.rom_count_offset[0]
-					else: textpos.x = self.cfg.options.rom_count_offset[0]
+					textpos = label.rect	
+					if self.cfg.options.rom_count_text_align == 'right':
+						textpos.x = text_align - label.rect.w + self.cfg.options.rom_count_offset[0]
+					elif  self.cfg.options.rom_count_text_align == 'center':
+						textpos.x = ((text_align - label.rect.w)/2) + self.cfg.options.rom_count_offset[0]
+					else: 
+						textpos.x = self.cfg.options.rom_count_offset[0]
 					textpos.y = self.cfg.options.rom_count_offset[1]
-					
 					icon.blit(label.image, textpos)
 
 		icon = pygame.transform.smoothscale(icon, icon_size)
@@ -139,30 +141,21 @@ class PMMenuItem(pygame.sprite.Sprite):
 				return []
 		
 	def update_num_roms(self):
-		
+	
 		query = 'SELECT COUNT(id) FROM local_roms where system = {pid}'.format(pid = self.id if self.id else -999)
 		if self.icon_id == 'FAVORITE': query = "SELECT COUNT(id) FROM local_roms WHERE flags like '%favorite%'"
 		self.num_roms = int(self.cfg.local_cursor.execute(query).fetchone()[0])
-		'''
-		if isdir(self.rom_path):
-			if '21' in self.scraper_id: #special check for scummvm:
-				len_files = len([ f for f in listdir(self.rom_path) if isdir(join(self.rom_path,f)) and f != 'images'])	
-			else:
-				len_files = len([ f for f in listdir(self.rom_path) if isfile(join(self.rom_path,f)) and f != '.gitkeep' ])
-		else:
-			len_files = 0
-			
-			
-		if (self.num_roms != len_files  
-			and self.scraper_id  
-			and self.override_menu != True
-			and self.type != 'FRONTEND'):
-						
-			self.num_roms = len_files
-			self.warning = "!"
-		'''
+
+	
+	def get_platform_info(self):
+		platform = self.cfg.platform_cursor.execute('SELECT id, title, overview, release_date FROM system_id where id=?', (self.scraper_id,)).fetchone()
+		if platform: 
+			platform = dict(zip(['id','title', 'overview', 'release_date'], platform))
+			platform['asset_image'] = '/home/pi/pimame/pimame-menu/assets/images/' + str(platform['id']) + '.png'
+			return platform
+		return None
+		
 	def get_rom_list(self):
-		#@TODO - am I using the type field?
 		
 		keys = [item[1] for item in  self.cfg.local_cursor.execute('PRAGMA table_info(local_roms)').fetchall()]
 		
@@ -173,7 +166,7 @@ class PMMenuItem(pygame.sprite.Sprite):
 		if self.cfg.options.rom_filter.lower() != 'all' : query += ' AND genres LIKE "%{genre_filter}%"'.format(genre_filter = self.cfg.options.rom_filter)
 		
 		#exclude clones
-		if not self.cfg.options.show_clones: query += ' AND cloneof = ""'
+		if not self.cfg.options.show_clones: query += ' AND ifnull(cloneof, "") = ""'
 		
 		#hide unmatched roms
 		if not self.cfg.options.show_unmatched_roms: query += ' AND (flags is null or flags not like "%no_match%")'

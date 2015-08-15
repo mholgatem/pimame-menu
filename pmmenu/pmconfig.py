@@ -5,16 +5,14 @@ from os import system
 import pygame
 from menuitem import *
 import sqlite3
+import shutil
 
 class PMCfg:
 	def __init__(self):
 		
-		#clear command line for incoming error messages
-		system('clear')
-		
 		#initialize sound mixer
-		try: system("alsactl --file ~/pimame/config/piplay-sound.state restore")
-		except: pass
+		if os.path.isfile("/home/pi/pimame/config/piplay-sound.state"):
+			system("alsactl --file /home/pi/pimame/config/piplay-sound.state restore")
 		pygame.mixer.pre_init(44100, -16, 1, 2048)
 		
 		path = os.path.realpath('/home/pi/pimame/pimame-menu/database/config.db')
@@ -27,6 +25,10 @@ class PMCfg:
 		path = os.path.realpath('/home/pi/pimame/pimame-menu/database/local.db')
 		self.local_db = sqlite3.connect(path, check_same_thread=False)
 		self.local_cursor = self.local_db.cursor()
+		
+		#if database is corrupt, replace it with backup
+		if self.local_cursor.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+			shutil.copy(path + '.bak', path)
 		
 		self.local_cursor.execute('CREATE TABLE IF NOT EXISTS local_roms'  + 
 		' (id INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE, system INTEGER, title TEXT, search_terms TEXT, parent TEXT, cloneof TEXT, release_date TEXT, overview TEXT, esrb TEXT, genres TEXT,' +
@@ -45,11 +47,6 @@ class PMCfg:
 		keys = [item[1] for item in self.config_cursor.execute('PRAGMA table_info(menu_items)').fetchall()]
 		values = self.config_cursor.execute('SELECT * FROM menu_items').fetchall()
 		config['menu_items'] = [dict(zip(keys,value)) for value in values]
-		
-		#DEPRECATED
-		#stream = open('/home/pi/pimame/pimame-menu/config.yaml', 'r')
-		#config = yaml.safe_load(stream)
-		#stream.close()
 		
 		#load theme file - use safe_load to make sure malicious code is not executed if hiding in theme.yaml
 		stream = open('/home/pi/pimame/pimame-menu/themes/' +config['options']['theme_pack'] + '/theme.yaml', 'r')
@@ -106,13 +103,18 @@ class PMCfg:
 		
 		#load music, only stream if music volume > 0
 		pygame.mixer.music.set_volume(self.options.default_music_volume)
-		if self.options.menu_music: 
+		if os.path.isfile(self.options.menu_music): 
 			pygame.mixer.music.load(self.options.menu_music)
 			if self.options.default_music_volume: pygame.mixer.music.play(-1)
 		
 		#pre-load surfaces
 		self.options.blur_image = pygame.Surface([screen_width, screen_height]).convert_alpha()
 		self.options.fade_image = pygame.Surface([screen_width, screen_height]).convert()
+	
+	def close_database_connections(self):
+		self.local_db.close()
+		self.config_db.close()
+		self.platform_db.close()
 		
 	def load_ks(self):
 		#load kickstarter names when called
@@ -145,14 +147,11 @@ class PMCfg:
 class PMOptions:
 	def __init__(self, opts, theme, opt_menu_items, theme_menu_items):
 	
-	
+		self.theme = theme
 		self.theme_name = opts['theme_pack']
-		self.theme_style = theme['theme_style'] if 'theme_style' in theme else 'grid'
-		
+		self.theme_style = self.get_theme('theme_style', 'grid')
 		self.theme_pack = "themes/" + opts['theme_pack'] + "/"
 		
-		
-
 		#Assign icons from theme if not assigned in config
 		for index, item in enumerate(opt_menu_items):
 			#assign theme icons
@@ -202,90 +201,93 @@ class PMOptions:
 		self.rom_filter = opts['filter_roms_by'].lower() if opts['filter_roms_by'] else 'all'
 		
 		#theme.yaml
-		self.header_height = theme['header_height']
-		self.header_color = self.get_color(theme['header_color'])
-		self.logo_image = theme['logo_image']
-		self.background_image = theme['background_image']
-		self.background_color = self.get_color(theme['background_color'])
-		self.generic_menu_item = self.theme_pack + theme['generic_menu_item']
-		self.generic_menu_item_selected = self.theme_pack + theme['generic_menu_item_selected']
-		self.item_color = self.get_color(theme['item_color'])
-		self.disabled_alpha = theme['disabled_alpha']
-		self.item_height = theme['item_height']
-		self.num_items_per_row = theme['num_items_per_row']
-		self.padding = theme['menu_item_padding']
-		self.display_navigation_labels = theme['display_navigation_labels']
+		self.header_height = self.get_theme('header_height', 0)
+		self.header_color = self.get_color(self.get_theme('header_color'))
+		self.logo_image = self.get_theme('logo_image', '')
+		self.background_image = self.get_theme('background_image', '')
+		self.background_color = self.get_color(self.get_theme('background_color'))
+		self.generic_menu_item = self.theme_pack + self.get_theme('generic_menu_item')
+		self.generic_menu_item_selected = self.theme_pack + self.get_theme('generic_menu_item_selected')
+		self.item_color = self.get_color(self.get_theme('item_color'))
+		self.disabled_alpha = self.get_theme('disabled_alpha', 60)
+		self.item_height = self.get_theme('item_height', 220)
+		self.num_items_per_row = self.get_theme('num_items_per_row', 5)
+		self.padding = self.get_theme('menu_item_padding', 0)
+		self.display_navigation_labels = self.get_theme('display_navigation_labels', True)
 		
-		self.menu_move_sound = self.theme_pack + theme['menu_move_sound']
-		self.menu_select_sound = self.theme_pack + theme['menu_select_sound']
-		self.menu_back_sound = self.theme_pack + theme['menu_back_sound']
-		self.menu_navigation_sound = self.theme_pack + theme['menu_navigation_sound']
-		try: self.menu_music = self.theme_pack + theme['menu_music']
-		except: self.menu_music = None
+		self.menu_move_sound = self.theme_pack + self.get_theme('menu_move_sound', '')
+		self.menu_select_sound = self.theme_pack + self.get_theme('menu_select_sound', '')
+		self.menu_back_sound = self.theme_pack + self.get_theme('menu_back_sound', '')
+		self.menu_navigation_sound = self.theme_pack + self.get_theme('menu_navigation_sound', '')
+		self.menu_music = self.theme_pack + self.get_theme('menu_music', '')
 		
-		self.loading_image = self.theme_pack + theme['loading_image']
-		self.font_file = theme['font_file']
-		self.default_font_size = theme['default_font_size']
-		self.default_font_color = self.get_color(theme['default_font_color'])
-		self.default_font_background_color = self.get_color(theme['default_font_background_color'])
-		self.popup_menu_font_size = theme['popup_menu_font_size']
-		self.popup_menu_font_color = self.get_color(theme['popup_menu_font_color'])
-		self.popup_menu_font_selected_color = self.get_color(theme['popup_menu_font_selected_color'])
-		self.popup_menu_background_color = self.get_color(theme['popup_menu_background_color'])
+		self.loading_image = self.theme_pack + self.get_theme('loading_image', '')
+		self.font_file = self.theme_pack + self.get_theme('font_file', '')
+		self.default_font_size = self.get_theme('default_font_size', 16)
+		self.default_font_color = self.get_color(self.get_theme('default_font_color', (255,255,255)))
+		self.default_font_background_color = self.get_color(self.get_theme('default_font_background_color', (0,0,0,0)))
+		self.default_font_outline_color = self.get_color(self.get_theme('default_font_outline_color'))
+		self.popup_menu_font_size = self.get_theme('popup_menu_font_size', 16)
+		self.popup_menu_font_color = self.get_color(self.get_theme('popup_menu_font_color', (255,255,255)))
+		self.popup_menu_font_selected_color = self.get_color(self.get_theme('popup_menu_font_selected_color', (255,0,255)))
+		self.popup_menu_background_color = self.get_color(self.get_theme('popup_menu_background_color', (80,80,80,80)))
 		
-		self.display_labels = theme['display_labels']
-		self.label_text_align = theme['label_text_align'].lower()
-		self.labels_offset = theme['labels_offset']
-		self.label_font_size = theme['label_font_size']
-		self.label_font_color = self.get_color(theme['label_font_color'])
-		self.label_font_bold = theme['label_font_bold']
-		self.label_background_color = self.get_color(theme['label_background_color'])
-		self.label_font_selected_color = self.get_color(theme['label_font_selected_color'])
-		self.label_font_selected_bold = theme['label_font_selected_bold']
-		self.label_background_selected_color = self.get_color(theme['label_background_selected_color'])
-		self.label_max_text_width = self.check_type(theme['label_max_text_width'])
+		self.display_labels = self.get_theme('display_labels', True)
+		self.label_text_align = self.get_theme('label_text_align', 'left').lower()
+		self.labels_offset = self.get_theme('labels_offset', [0,0])
+		self.label_font_size = self.get_theme('label_font_size', 16)
+		self.label_font_color = self.get_color(self.get_theme('label_font_color', (255,0,0)))
+		self.label_font_outline_color = self.get_color(self.get_theme('label_font_outline_color'))
+		self.label_font_bold = self.get_theme('label_font_bold', False)
+		self.label_background_color = self.get_color(self.get_theme('label_background_color', (0,0,0,0)))
+		self.label_font_selected_color = self.get_color(self.get_theme('label_font_selected_color', (255,0,255)))
+		self.label_font_outline_selected_color = self.get_color(self.get_theme('label_font_outline_selected_color'))
+		self.label_font_selected_bold = self.get_theme('label_font_selected_bold', False)
+		self.label_background_selected_color = self.get_color(self.get_theme('label_background_selected_color', (0,0,0,0)))
+		self.label_max_text_width = self.check_type(self.get_theme('label_max_text_width', False))
 		
-		self.display_rom_count = theme['display_rom_count']
-		self.rom_count_text_align = theme['rom_count_text_align'].lower()
-		self.rom_count_offset = theme['rom_count_offset']
-		self.rom_count_font_size = theme['rom_count_font_size']
-		self.rom_count_font_color = self.get_color(theme['rom_count_font_color'])
-		self.rom_count_font_bold = theme['rom_count_font_bold']
-		self.rom_count_background_color = self.get_color(theme['rom_count_background_color'])
-		self.rom_count_font_selected_color = self.get_color(theme['rom_count_font_selected_color'])
-		self.rom_count_font_selected_bold = theme['rom_count_font_selected_bold']
-		self.rom_count_background_selected_color = self.get_color(theme['rom_count_background_selected_color'])
-		self.rom_count_max_text_width = self.check_type(theme['rom_count_max_text_width'])
+		self.display_rom_count = self.get_theme('display_rom_count', True)
+		self.rom_count_text_align = self.get_theme('rom_count_text_align', 'left').lower()
+		self.rom_count_offset = self.get_theme('rom_count_offset', [0,0])
+		self.rom_count_font_size = self.get_theme('rom_count_font_size', 16)
+		self.rom_count_font_color = self.get_color(self.get_theme('rom_count_font_color', (255,0,0)))
+		self.rom_count_font_bold = self.get_theme('rom_count_font_bold', False)
+		self.rom_count_background_color = self.get_color(self.get_theme('rom_count_background_color', (0,0,0,0)))
+		self.rom_count_font_selected_color = self.get_color(self.get_theme('rom_count_font_selected_color', (255,0,0)))
+		self.rom_count_font_selected_bold = self.get_theme('rom_count_font_selected_bold', False)
+		self.rom_count_background_selected_color = self.get_color(self.get_theme('rom_count_background_selected_color', (0,0,0,0)))
+		self.rom_count_max_text_width = self.check_type(self.get_theme('rom_count_max_text_width', False))
 		
-		self.rom_list_font_size = theme['rom_list_font_size']
-		self.rom_list_favorite_icon = self.load_image(self.theme_pack + theme['rom_list_favorite_icon'], 'assets/images/star.png')
-		self.rom_list_font_align = theme['rom_list_font_align'].lower()
-		self.rom_list_font_color = self.get_color(theme['rom_list_font_color'])
-		self.rom_list_background_color = self.get_color(theme['rom_list_background_color'])
-		self.rom_list_font_bold = theme['rom_list_font_bold']
-		self.rom_list_font_selected_color = self.get_color(theme['rom_list_font_selected_color'])
-		self.rom_list_font_selected_bold = theme['rom_list_font_selected_bold']
-		self.rom_list_background_selected_color = self.get_color(theme['rom_list_background_selected_color'])
-		self.rom_list_background_image = theme['rom_list_background_image']
-		self.rom_list_offset = {"left": theme['rom_list_offset'][0], "top": theme['rom_list_offset'][1], "right": theme['rom_list_offset'][2], "bottom": theme['rom_list_offset'][3]}
-		self.rom_list_align = theme['rom_list_align'].lower()
-		self.rom_list_padding = int(theme['rom_list_padding'])
-		self.rom_list_max_text_width = self.check_type(theme['rom_list_max_text_width'])
+		self.rom_list_font_size = self.get_theme('rom_list_font_size', 16)
+		self.rom_list_favorite_icon = self.load_image(self.theme_pack + self.get_theme('rom_list_favorite_icon', ''), 'assets/images/star.png')
+		self.rom_list_font_align = self.get_theme('rom_list_font_align', 'left').lower()
+		self.rom_list_font_color = self.get_color(self.get_theme('rom_list_font_color', (255,255,255)))
+		self.rom_list_background_color = self.get_color(self.get_theme('rom_list_background_color', (0,0,0,0)))
+		self.rom_list_font_bold = self.get_theme('rom_list_font_bold', False)
+		self.rom_list_font_selected_color = self.get_color(self.get_theme('rom_list_font_selected_color', (255,0,255)))
+		self.rom_list_font_selected_bold = self.get_theme('rom_list_font_selected_bold', False)
+		self.rom_list_background_selected_color = self.get_color(self.get_theme('rom_list_background_selected_color', (0,0,0,0)))
+		self.rom_list_background_image = self.get_theme('rom_list_background_image', '')
+		self.rom_list_offset = self.get_theme('rom_list_offset', (0,0,0,0))
+		self.rom_list_offset = {"left": self.rom_list_offset[0], "top": self.rom_list_offset[1], "right": self.rom_list_offset[2], "bottom": self.rom_list_offset[3]}
+		self.rom_list_align = self.get_theme('rom_list_align', 'left').lower()
+		self.rom_list_padding = int(self.get_theme('rom_list_padding', 10))
+		self.rom_list_max_text_width = self.check_type(self.get_theme('rom_list_max_text_width', False))
 		
-		self.boxart_offset = theme['boxart_offset']
-		self.boxart_max_width = float(theme['boxart_max_width'].strip('%'))/100
-		self.boxart_max_height = float(theme['boxart_max_height'].strip('%'))/100
-		self.boxart_background_color = self.get_color(theme['boxart_background_color'])
-		self.boxart_border_thickness = theme['boxart_border_thickness']
-		self.boxart_border_color = self.get_color(theme['boxart_border_color'])
+		self.boxart_offset = self.get_theme('boxart_offset', [0,0])
+		self.boxart_max_width = float(self.get_theme('boxart_max_width', '95%').strip('%'))/100
+		self.boxart_max_height = float(self.get_theme('boxart_max_height', '95%').strip('%'))/100
+		self.boxart_background_color = self.get_color(self.get_theme('boxart_background_color', (0,0,0,0)))
+		self.boxart_border_thickness = self.get_theme('boxart_border_thickness', 2)
+		self.boxart_border_color = self.get_color(self.get_theme('boxart_border_color', (255,255,255)))
 		  
-		self.info_font_file = theme['info_font_file']
-		self.info_font_size = theme['info_font_size']
-		self.info_font_color = self.get_color(theme['info_font_color'])
-		self.info_bg1 = self.get_color(theme['info_extras_background_color'])
-		self.info_bg2 = self.get_color(theme['info_overview_background_color'])
-		self.info_border_color = self.get_color(theme['info_border_color'])
-		self.info_border_thickness = theme['info_border_thickness']
+		self.info_font_file = self.theme_pack + self.get_theme('info_font_file','')
+		self.info_font_size = self.get_theme('info_font_size', 16)
+		self.info_font_color = self.get_color(self.get_theme('info_font_color', (255,255,255)))
+		self.info_bg1 = self.get_color(self.get_theme('info_extras_background_color', (80,80,80,80)))
+		self.info_bg2 = self.get_color(self.get_theme('info_overview_background_color', (50,50,50,80)))
+		self.info_border_color = self.get_color(self.get_theme('info_border_color', (255,255,255)))
+		self.info_border_thickness = self.get_theme('info_border_thickness', 2)
 		
 
 		#items to be pre-loaded for efficiency
@@ -294,19 +296,18 @@ class PMOptions:
 		self.draw_rect = None
 		self.blank_image = pygame.Surface((1,1), pygame.SRCALPHA, 32)#pygame.image.load(os.path.realpath('/home/pi/pimame/pimame-menu/assets/images/blank.png'))
 		
-		self.font = pygame.font.Font(self.theme_pack + self.font_file, self.default_font_size)
-		self.popup_font = pygame.font.Font(self.theme_pack + self.font_file, self.popup_menu_font_size)
-		self.popup_rom_letter_font = pygame.font.Font(self.theme_pack + self.font_file, 25)
-		self.label_font = pygame.font.Font(self.theme_pack + self.font_file, self.label_font_size)
-		self.rom_count_font = pygame.font.Font(self.theme_pack + self.font_file, self.rom_count_font_size)
-		self.rom_list_font = pygame.font.Font(self.theme_pack + self.font_file, self.rom_list_font_size)
-		self.info_font = pygame.font.Font(self.theme_pack + self.info_font_file, self.info_font_size)
+		self.font = pygame.font.Font(self.font_file, self.default_font_size)
+		self.popup_font = pygame.font.Font(self.font_file, self.popup_menu_font_size)
+		self.popup_rom_letter_font = pygame.font.Font(self.font_file, 25)
+		self.label_font = pygame.font.Font(self.font_file, self.label_font_size)
+		self.rom_count_font = pygame.font.Font(self.font_file, self.rom_count_font_size)
+		self.rom_list_font = pygame.font.Font(self.font_file, self.rom_list_font_size)
+		self.info_font = pygame.font.Font(self.info_font_file, self.info_font_size)
 		
 		self.pre_loaded_background = self.load_image(self.theme_pack + self.background_image)
-		self.pre_loaded_romlist = self.load_image(self.theme_pack + theme['rom_list_item_image'])
-		self.pre_loaded_romlist_selected = self.load_image(self.theme_pack + theme['rom_list_item_selected_image'])
+		self.pre_loaded_romlist = self.load_image(self.theme_pack + self.get_theme('rom_list_item_image', ''))
+		self.pre_loaded_romlist_selected = self.load_image(self.theme_pack + self.get_theme('rom_list_item_selected_image', ''))
 		self.pre_loaded_rom_list_background = self.load_image(self.theme_pack + self.rom_list_background_image)
-		
 	
 		if not self.background_image:
 			self.pre_loaded_background = pygame.Surface([100,100], pygame.SRCALPHA, 32)
@@ -318,17 +319,23 @@ class PMOptions:
 		
 		#determine romlist item height
 		self.romlist_item_height = max(self.pre_loaded_romlist.get_rect().h, self.rom_list_font.size('')[1])
-		if self.check_type(theme['rom_list_min_background_height']): self.romlist_item_height = max(self.romlist_item_height, theme['rom_list_min_background_height'])
+		if self.check_type(theme['rom_list_min_background_height']): self.romlist_item_height = max(self.romlist_item_height, self.get_theme('rom_list_min_background_height', self.romlist_item_height))
 		
 		#determine romlist item width
 		if str(theme['rom_list_min_background_width']).lower() == 'auto' : self.romlist_item_width = max(self.pre_loaded_romlist.get_rect().w, 300)
 		else: self.romlist_item_width = max(self.pre_loaded_romlist.get_rect().w, int(theme['rom_list_min_background_width']))
 		
-		self.missing_boxart_image = (self.theme_pack + theme['missing_boxart_image']) if os.path.isfile(self.theme_pack + theme['missing_boxart_image']) else (os.path.realpath('/home/pi/pimame/pimame-menu/assets/images/missing_boxart.png'))
-		
+		self.missing_boxart_image = (self.theme_pack + self.get_theme('missing_boxart_image', '')) if os.path.isfile(self.theme_pack + self.get_theme('missing_boxart_image', '')) else (os.path.realpath('/home/pi/pimame/pimame-menu/assets/images/missing_boxart.png'))
+	
+	def get_theme(self, attribute, default = None):
+		if attribute in self.theme:
+			return self.theme[attribute]
+		return default
 
 	def get_color(self, color_str):
-		return tuple([int(x) for x in color_str.split(",")])
+		if color_str is not None:
+			return pygame.Color(*[int(x) for x in color_str.split(",")])
+		return pygame.Color(0,0,0,0)
 	
 	#test if number value or string (ie - string = 'auto')
 	def check_type(self, input):

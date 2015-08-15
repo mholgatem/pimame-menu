@@ -9,9 +9,9 @@ JOYSTICK:
     DOWN: 1
   
   BUTTONS:
-    SELECT: 0
+    SELECT: 2
     BACK: 1
-    MENU: 2
+    MENU: 0
     Quit: [1,2]
   
 KEYBOARD:
@@ -37,7 +37,7 @@ KEYBOARD:
   - pygame.K_KP_ENTER
   BACK:
   - pygame.K_ESCAPE
-  - pygame.K_j
+  - pygame.K_u
   MENU:
   - pygame.K_TAB
   - pygame.K_n
